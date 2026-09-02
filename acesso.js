@@ -47,31 +47,57 @@ var TEMPORADA = "2026";
     if (window.__olitefRevelar) window.__olitefRevelar();
   }
 
-  /* O registro vai como GET, carregado por uma imagem invisível. Parece
-   * rodeio, mas é o método que atravessa qualquer navegador: não passa por
-   * verificação de CORS, não precisa de permissão especial e funciona no
-   * Safari, que bloqueia envios POST entre sites. A imagem nunca carrega de
-   * fato (a resposta é texto), e isso não tem problema — o que importa é que
-   * o pedido chega ao Apps Script. Falha de rede nunca impede o acesso ao
-   * material. */
+  /* Enviar dados de um site para outro é justamente o que os navegadores mais
+   * bloqueiam, e cada um bloqueia de um jeito. Em vez de apostar num método,
+   * o registro sai por três vias ao mesmo tempo: sendBeacon (feito para isso e
+   * o mais confiável no Safari), uma imagem invisível (funciona em qualquer
+   * navegador antigo) e fetch. Cada envio leva um código único, e o script da
+   * planilha descarta as repetições — então mesmo que as três cheguem, entra
+   * uma linha só. Falha de rede nunca impede o acesso ao material. */
   function registrar(aluno, evento) {
     if (!PLANILHA_URL) return;
+
+    var id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    var dados = {
+      nome: aluno.nome, serie: aluno.serie, turma: aluno.turma,
+      evento: evento, pagina: document.title || location.pathname, id: id
+    };
+    var url = PLANILHA_URL + "?" + Object.keys(dados).map(function (k) {
+      return k + "=" + encodeURIComponent(dados[k]);
+    }).join("&");
+
+    var relato = [];
+
     try {
-      var q = "?nome=" + encodeURIComponent(aluno.nome) +
-        "&serie=" + encodeURIComponent(aluno.serie) +
-        "&turma=" + encodeURIComponent(aluno.turma) +
-        "&evento=" + encodeURIComponent(evento) +
-        "&pagina=" + encodeURIComponent(document.title || location.pathname) +
-        "&t=" + Date.now();
+      if (navigator.sendBeacon && navigator.sendBeacon(url)) relato.push("beacon enviado");
+      else relato.push("beacon indisponível");
+    } catch (e) { relato.push("beacon falhou"); }
+
+    try {
       var img = new Image();
-      img.referrerPolicy = "no-referrer";
-      img.src = PLANILHA_URL + q;
-      /* Mantém a referência viva por alguns segundos: sem isso, o navegador
-       * pode descartar a imagem antes de completar o pedido. */
+      img.src = url;
+      /* Mantém a referência viva: sem isso o navegador pode descartar a
+       * imagem antes de o pedido sair. */
       window.__olitefPings = window.__olitefPings || [];
       window.__olitefPings.push(img);
-      setTimeout(function () { window.__olitefPings.shift(); }, 8000);
-    } catch (e) { /* segue sem registrar */ }
+      setTimeout(function () { window.__olitefPings.shift(); }, 10000);
+      relato.push("imagem enviada");
+    } catch (e) { relato.push("imagem falhou"); }
+
+    try {
+      if (window.fetch) {
+        fetch(url, { mode: "no-cors", cache: "no-store" }).catch(function () {});
+        relato.push("fetch enviado");
+      }
+    } catch (e) { relato.push("fetch falhou"); }
+
+    /* Modo de conferência: abra qualquer página com ?debug no fim do endereço
+     * e o resultado do envio aparece na tela. Serve só para o professor. */
+    if (location.search.indexOf("debug") >= 0) {
+      setTimeout(function () {
+        window.alert("Envio para a planilha\n\n" + relato.join("\n") + "\n\nEndereço:\n" + url);
+      }, 300);
+    }
   }
 
   var salvo = null;
