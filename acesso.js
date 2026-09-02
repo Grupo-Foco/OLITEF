@@ -47,23 +47,31 @@ var TEMPORADA = "2026";
     if (window.__olitefRevelar) window.__olitefRevelar();
   }
 
-  /* O envio usa no-cors: o Apps Script recebe o registro, mas o navegador não
-   * lê a resposta. É o suficiente aqui — e evita erro de CORS bloqueando a
-   * navegação do aluno. Falha de rede nunca impede o acesso ao material. */
+  /* O registro vai como GET, carregado por uma imagem invisível. Parece
+   * rodeio, mas é o método que atravessa qualquer navegador: não passa por
+   * verificação de CORS, não precisa de permissão especial e funciona no
+   * Safari, que bloqueia envios POST entre sites. A imagem nunca carrega de
+   * fato (a resposta é texto), e isso não tem problema — o que importa é que
+   * o pedido chega ao Apps Script. Falha de rede nunca impede o acesso ao
+   * material. */
   function registrar(aluno, evento) {
     if (!PLANILHA_URL) return;
     try {
-      var corpo = {
-        nome: aluno.nome, serie: aluno.serie, turma: aluno.turma,
-        evento: evento, pagina: document.title || location.pathname,
-        url: location.href, momento: new Date().toISOString()
-      };
-      fetch(PLANILHA_URL, {
-        method: "POST", mode: "no-cors",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(corpo)
-      }).catch(function () { /* sem rede: o aluno segue estudando */ });
-    } catch (e) { /* idem */ }
+      var q = "?nome=" + encodeURIComponent(aluno.nome) +
+        "&serie=" + encodeURIComponent(aluno.serie) +
+        "&turma=" + encodeURIComponent(aluno.turma) +
+        "&evento=" + encodeURIComponent(evento) +
+        "&pagina=" + encodeURIComponent(document.title || location.pathname) +
+        "&t=" + Date.now();
+      var img = new Image();
+      img.referrerPolicy = "no-referrer";
+      img.src = PLANILHA_URL + q;
+      /* Mantém a referência viva por alguns segundos: sem isso, o navegador
+       * pode descartar a imagem antes de completar o pedido. */
+      window.__olitefPings = window.__olitefPings || [];
+      window.__olitefPings.push(img);
+      setTimeout(function () { window.__olitefPings.shift(); }, 8000);
+    } catch (e) { /* segue sem registrar */ }
   }
 
   var salvo = null;
